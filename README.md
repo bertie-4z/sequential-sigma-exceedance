@@ -4,3 +4,9 @@ Code intakes a complete time series and for a given lookback period, computes th
 
 Output types include a matrix of conditional probabilities (proxied by computed frequencies), a group of histograms, and a generic curve plot (with incremental sigmas as the x-axis). 
 
+## Awaiting fixes:
+
+-Increment input parameter
+-Number of thresholds parameter (this is currently arbitrarily set at 7)
+
+
