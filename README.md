@@ -6,6 +6,6 @@ Output types include a matrix of conditional probabilities (proxied by computed 
 
 ## Awaiting fixes:
 
--Number of thresholds parameter (this is currently arbitrarily set at 7)
+-Time limit in sigma exceedance calculation
 
 
