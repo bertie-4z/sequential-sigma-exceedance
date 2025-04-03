@@ -4,17 +4,19 @@ class ConditionalSigmaFreq:
     std_increment: float
     lookback_window: int
     edf: pd.DataFrame ## 'Events' dataframe, 由 布尔值 构成的 数据框
+    thresholds_count = int
     thresholds: list ## list of absolute values 绝对值 构成的 串列
     possig_cpmdf: pd.DataFrame ## Positive Sigma 'Conditional Probability' Matrix dataframe 正 西格玛 的 条件概率 矩阵 dataframe; 行 = [f'P( |{b})', 列 = f'P({a}| )'
     negsig_cpmdf: pd.DataFrame ## Negative Sigma 'Conditional Probability' Matrix dataframe 负 西格玛 的 条件概率 矩阵 dataframe; 行 = [f'P( |{b})', 列 = f'P({a}| )'
     
-    def __init__(self, series, std_baseline, std_increment, lookback_window):
+    def __init__(self, series, std_baseline, std_increment, lookback_window, thresholds_count):
         self.series = series
         self.std_baseline = std_baseline
         self.std_increment = std_increment
         self.lookback_window = lookback_window
-        self.thresholds = [self.std_baseline + i*self.std_increment for i in range(7)] ## 7 是 一个 任意值，之后 可以 更改，也 可以 设置为 一个 输入 参数。
-    
+        self.thresholds_count = thresholds_count
+        self.thresholds = [round(std_baseline + i*std_increment, 1) for i in range(thresholds_count)]
+        
     def get_zscores_edf(self):
         self.edf = pd.DataFrame(self.series.rename('series'))
         self.edf[f'{self.lookback_window}mavg'] = self.series.rolling(window=self.lookback_window, closed='left').mean()
@@ -25,8 +27,8 @@ class ConditionalSigmaFreq:
         return self.edf
         
     def sigma_events_edf(self):
-        threshold_cols_positive = [f'{thresh}σ' for thresh in self.thresholds]
-        threshold_cols_negative = [f'-{thresh}σ' for thresh in self.thresholds]
+        threshold_cols_positive = [f'{thresh:.1f}σ' for thresh in self.thresholds]
+        threshold_cols_negative = [f'-{thresh:.1f}σ' for thresh in self.thresholds]
         self.edf = self.get_zscores_edf()
         for thresh, col in zip(self.thresholds, threshold_cols_positive):
             self.edf[col] = (self.edf[f'{self.lookback_window}_zscore'] > thresh).astype(int)
@@ -60,23 +62,28 @@ class ConditionalSigmaFreq:
 
         return streaks
         
-    def std_cond_prob(self, next_sigma, base_sigma):
+    def compute_std_cond_prob(self, next_sigma, base_sigma, next_sigma_latency=None): ## a new sigma would only be considered to have been reached if it is within the next_sigma_latency parameter
+                                                                                     ## this parameter is currently a non-relative value, but can later be adjusted to a value relative to lookback_window
         if base_sigma >= next_sigma:
             return 1
-        
-        base_streaks = self.sigma_streaks_timestamps(base_sigma)
-        next_streaks = self.sigma_streaks_timestamps(next_sigma)
-        next_sigma_reached_counter = 0    
-        for bs_start, bs_end in base_streaks:        
+        base_streaks = self.sigma_streaks_timestamps(base_sigma) ## # list of tuples of timestamps (start, end)
+        next_streaks = self.sigma_streaks_timestamps(next_sigma)        
+        next_sigma_exceeded_counter = 0    
+        for bs_start, bs_end in base_streaks:
             for ns_start, ns_end in next_streaks:
                 if bs_start <= ns_start and ns_end <= bs_end:
-                    next_sigma_reached_counter += 1
-                    break
-            
+                    if not next_sigma_latency:
+                        next_sigma_exceeded_counter += 1
+                        break
+                    elif next_sigma_latency:
+                        if (ns_start - bs_start) <= timedelta(minutes = next_sigma_latency):
+                            next_sigma_exceeded_counter += 1
+                            break
+
         if len(base_streaks) == 0:
             return np.nan
-        
-        return next_sigma_reached_counter/len(base_streaks)
+
+        return next_sigma_exceeded_counter/len(base_streaks)
         
     
     def cond_prob_df(self): ## returns a cpdf
@@ -90,12 +97,12 @@ class ConditionalSigmaFreq:
         
         for a in positive_cols:
             for b in positive_cols:                
-                cp = self.std_cond_prob(a,b)
+                cp = self.compute_std_cond_prob(a,b)
                 self.possig_cpmdf.at[f'P( | {b}σ)', f'P({a}σ | )'] = cp
         
         for a in negative_cols:
             for b in negative_cols:                
-                cp = self.std_cond_prob(a,b)
+                cp = self.compute_std_cond_prob(a,b)
                 self.negsig_cpmdf.at[f'P( | {b}σ)', f'P({a}σ | )'] = cp
         
         return self.possig_cpmdf, self.negsig_cpmdf
@@ -185,4 +192,5 @@ class ConditionalSigmaFreq:
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.legend(title="Condition (Base σ)", bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.tight_layout()
-        plt.show()
+        plt.show();
+                        
