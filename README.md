@@ -6,8 +6,6 @@ Output types include a matrix of conditional probabilities (proxied by computed 
 
 ## Awaiting fixes:
 
--Increment input parameter
-
 -Number of thresholds parameter (this is currently arbitrarily set at 7)
 
 
