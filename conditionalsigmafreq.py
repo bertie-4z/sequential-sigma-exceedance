@@ -26,7 +26,7 @@ class ConditionalSigmaFreq:
     std_increment: float
     lookback_window: int
     edf: pd.DataFrame ## 'Events' dataframe, 由 布尔值 构成的 数据框
-    thresholds_count = int
+    thresholds_count: int
     thresholds_pos: list ## list of positive threshold values 正数值 构成的 串列
     thresholds_neg: list ## list of negative threshold values 负数值 构成的 串列    
     possig_cpmdf: pd.DataFrame ## Positive Sigma 'Conditional Probability' Matrix dataframe 正 西格玛 的 条件概率 矩阵 dataframe; 行 = [f'P( |{b})', 列 = f'P({a}| )'
