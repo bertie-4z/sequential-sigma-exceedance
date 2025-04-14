@@ -40,7 +40,14 @@ class ConditionalSigmaFreq:
         self.thresholds = [round(std_baseline + i*std_increment, 1) for i in range(thresholds_count)]
         
     def get_zscores_edf(self):
-        self.edf = pd.DataFrame(self.series.rename('series'))
+        if isinstance(self.series, pd.Series):
+            self.edf = pd.DataFrame(self.series.rename('series'))
+        elif isinstance(self.series, pd.DataFrame):
+            if self.series.shape[1] == 1:
+                self.edf = self.series.copy()
+                self.edf.columns = ['series']
+            else:
+                raise ValueError("Expected a single-column DataFrame for `self.series`")
         self.edf[f'{self.lookback_window}mavg'] = self.series.rolling(window=self.lookback_window, closed='left').mean()
         self.edf[f'{self.lookback_window}mstd'] = self.series.rolling(window=self.lookback_window, closed='left').std()
         self.edf[f'{self.lookback_window}_zscore'] = (self.series - self.edf[f'{self.lookback_window}mavg']) / self.edf[f'{self.lookback_window}mstd']
