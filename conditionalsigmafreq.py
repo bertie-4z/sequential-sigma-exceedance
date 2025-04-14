@@ -22,48 +22,63 @@ import time
 
 class ConditionalSigmaFreq:
     series: pd.Series
-    std_baseline: float
+    std_baseline: float ## abs value of both positive and negative baseline sigmas
     std_increment: float
     lookback_window: int
     edf: pd.DataFrame ## 'Events' dataframe, 由 布尔值 构成的 数据框
     thresholds_count = int
-    thresholds: list ## list of absolute values 绝对值 构成的 串列
+    thresholds_pos: list ## list of positive threshold values 正数值 构成的 串列
+    thresholds_neg: list ## list of negative threshold values 负数值 构成的 串列    
     possig_cpmdf: pd.DataFrame ## Positive Sigma 'Conditional Probability' Matrix dataframe 正 西格玛 的 条件概率 矩阵 dataframe; 行 = [f'P( |{b})', 列 = f'P({a}| )'
     negsig_cpmdf: pd.DataFrame ## Negative Sigma 'Conditional Probability' Matrix dataframe 负 西格玛 的 条件概率 矩阵 dataframe; 行 = [f'P( |{b})', 列 = f'P({a}| )'
     
     def __init__(self, series, std_baseline, std_increment, lookback_window, thresholds_count):
         self.series = series
+        if isinstance(self.series, pd.DataFrame):
+            if self.series.shape[1] == 1:
+                self.series = self.series.iloc[:, 0]  # extract the Series
+            else:
+                raise ValueError("Expected a single-column DataFrame for `self.series`")
         self.std_baseline = std_baseline
         self.std_increment = std_increment
         self.lookback_window = lookback_window
         self.thresholds_count = thresholds_count
-        self.thresholds = [round(std_baseline + i*std_increment, 1) for i in range(thresholds_count)]
+        self.thresholds_pos = [round(std_baseline + i*std_increment, 1) for i in range(thresholds_count)]
+        self.thresholds_neg = [-x for x in self.thresholds_pos]
         
     def get_zscores_edf(self):
         if isinstance(self.series, pd.Series):
             self.edf = pd.DataFrame(self.series.rename('series'))
         elif isinstance(self.series, pd.DataFrame):
             if self.series.shape[1] == 1:
-                self.edf = self.series.copy()
-                self.edf.columns = ['series']
+                self.series = self.series.iloc[:, 0]  # extract the Series
+                self.edf = pd.DataFrame(self.series.rename('series'))
             else:
                 raise ValueError("Expected a single-column DataFrame for `self.series`")
+        
         self.edf[f'{self.lookback_window}mavg'] = self.series.rolling(window=self.lookback_window, closed='left').mean()
         self.edf[f'{self.lookback_window}mstd'] = self.series.rolling(window=self.lookback_window, closed='left').std()
         self.edf[f'{self.lookback_window}_zscore'] = (self.series - self.edf[f'{self.lookback_window}mavg']) / self.edf[f'{self.lookback_window}mstd']
-        self.edf.drop([f'{self.lookback_window}mavg', f'{self.lookback_window}mstd'], axis=1, inplace=True)
-        
+#         self.edf.drop([f'{self.lookback_window}mavg', f'{self.lookback_window}mstd'], axis=1, inplace=True)
+        self.edf = self.edf.dropna()
         return self.edf
         
     def sigma_events_edf(self):
-        threshold_cols_positive = [f'{thresh:.1f}σ' for thresh in self.thresholds]
-        threshold_cols_negative = [f'-{thresh:.1f}σ' for thresh in self.thresholds]
+        threshold_cols_positive = [f'{thresh:.1f}σ' for thresh in self.thresholds_pos]
+        threshold_cols_negative = [f'{thresh:.1f}σ' for thresh in self.thresholds_neg]
         self.edf = self.get_zscores_edf()
-        for thresh, col in zip(self.thresholds, threshold_cols_positive):
+        for thresh, col in zip(self.thresholds_pos, threshold_cols_positive):
             self.edf[col] = (self.edf[f'{self.lookback_window}_zscore'] > thresh).astype(int)
-        for thresh, col in zip(self.thresholds, threshold_cols_negative):
+        for thresh, col in zip(self.thresholds_neg, threshold_cols_negative):
             self.edf[col] = (self.edf[f'{self.lookback_window}_zscore'] < thresh).astype(int)
         return self.edf
+    def debug_sigma_events_edf(self):
+        threshold_cols_positive = [f'{thresh:.1f}σ' for thresh in self.thresholds_pos]
+        threshold_cols_negative = [f'{thresh:.1f}σ' for thresh in self.thresholds_neg]
+        self.edf = self.get_zscores_edf()
+        for thresh, col in zip(self.thresholds_neg, threshold_cols_negative):
+            print(thresh)
+        return threshold_cols_negative
     
     def sigma_streaks_timestamps(self, target_std):
         self.edf = self.sigma_events_edf()
@@ -116,8 +131,8 @@ class ConditionalSigmaFreq:
         
     
     def cond_prob_df(self): ## returns a cpdf
-        positive_cols = self.thresholds
-        negative_cols = [-x for x in self.thresholds]
+        positive_cols = self.thresholds_pos
+        negative_cols = self.thresholds_neg
         
         self.possig_cpmdf = pd.DataFrame(index=[f'P( | {b}σ)' for b in positive_cols],
                            columns=[f'P({a}σ | )' for a in positive_cols])
@@ -142,7 +157,7 @@ class ConditionalSigmaFreq:
         base_sigma_label = f'P( | {base_sigma:.1f}σ)' ## 基准σ 代表的 是 每行的 索引值 ## base sigma is row's index value 
 
         if base_sigma > 0:
-            if base_sigma not in self.thresholds:
+            if base_sigma not in self.thresholds_pos:
                 raise ValueError(f"{base_sigma} not found in DataFrame index.")
             row = self.possig_cpmdf.loc[base_sigma_label]
             filtered_data = {
@@ -169,7 +184,7 @@ class ConditionalSigmaFreq:
 
             
         if base_sigma < 0:
-            if base_sigma not in [-x for x in self.thresholds]:
+            if base_sigma not in self.thresholds_neg:
                 raise ValueError(f"{base_sigma} not found in DataFrame index.")
                         
             row = self.negsig_cpmdf.loc[base_sigma_label]
